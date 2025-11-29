@@ -15,8 +15,7 @@
 #define LOG_IN_SUCCESS(msg,user) sprintf(msg,"Log-in success!! [%s] *^^*",user)
 #define LOG_IN_FAIL				 "Log-in fail: Incorrect password..."
 #define NOT_FIND_USER			 "Not Find user ID"
-#define MAX_USER 3
-#define MAX_LEN 64
+#define MAX_USER 2
 char *user_ID[MAX_USER]= {"user1","user2"};
 char *user_PW[MAX_USER]= {"passwd1","passwd2"};
 
@@ -103,9 +102,12 @@ int main(void)
 					div_idx = pdiv-buf;
 					strncpy(id, buf,div_idx);
 					id[div_idx]='\0';
-					strcpy(pw, pdiv+1);
-					user_idx = Find_user(id);
+					int pw_len = strlen(buf) - div_idx - 1;
+					strncpy(pw, pdiv+1,pw_len);
 
+					pw[pw_len]='\0';
+					user_idx = Find_user(id);
+					
 					printf("=========================\nUser Information\n");
 					printf("ID: %s, PW: %s\n",id,pw);
 					printf("=========================\n");
@@ -131,7 +133,11 @@ int main(void)
 						printf("%s\n\n",NOT_FIND_USER);
 					}
 				}
+				else {
+					printf("data loss\n");
+				}
 			}
+			memset(buf, 0, sizeof(buf));
 			close(new_fd);
 		}
 		else if(pid > 0) // parent process
