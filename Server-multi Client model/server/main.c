@@ -10,6 +10,11 @@
 #define SERV_IP		"220.149.128.92"
 #define SERV_PORT	4000
 #define BACKLOG		10
+/* Client_Log_in return code */
+#define MALFUNCTION 		2
+#define RECV_EERROR 		-1
+#define RECV_NO_ERROR 		0
+#define DATAFRAMES_MISMATCH 1
 
 #define INIT_MSG "=========================\nHello! I'm P2P File Sharing Server\nPlease, LOG-IN!\n=========================\n"
 #define LOG_IN_SUCCESS(msg,user) sprintf(msg,"Log-in success!! [%s] *^^*",user)
@@ -19,9 +24,8 @@
 char *user_ID[MAX_USER]= {"user1","user2"};
 char *user_PW[MAX_USER]= {"passwd1","passwd2"};
 
-void Client_Log_in(int client_fd);
+int Client_Log_in(int client_fd,char *buf);
 int Find_user(char * target);
-
 
 
 int main(void)
@@ -34,9 +38,6 @@ int main(void)
 	/* buffer */
 	int rcv_byte;
 	char buf[512];
-	char id[20];
-	char pw[20];
-	char msg[512];
 	int val = 1;
 	
 	sockfd = socket(AF_INET, SOCK_STREAM, 0); // socket(~,~,protocol); protocol == 0 mean Auto Set protocol
@@ -69,8 +70,7 @@ int main(void)
 		perror("listen() error lol!");
 		exit(1);
 	}
-	else printf("listen() is OK...\n");
-
+	else printf("listen() is OK...\n\n");
 
 	while(1)
 	{
@@ -91,51 +91,22 @@ int main(void)
 		}
 		else if(pid == 0) // child process
 		{
-			rcv_byte=recv(new_fd,buf,sizeof(buf),0);
-			if(rcv_byte>0)
+			int receive_res = Client_Log_in(new_fd,buf);
+					
+			switch(receive_res)
 			{
-				char * pdiv = strchr(buf,'|');
-				int div_idx = 0;
-				int user_idx = -1;
-				if(pdiv != NULL)
-				{
-					div_idx = pdiv-buf;
-					strncpy(id, buf,div_idx);
-					id[div_idx]='\0';
-					int pw_len = strlen(buf) - div_idx - 1;
-					strncpy(pw, pdiv+1,pw_len);
-
-					pw[pw_len]='\0';
-					user_idx = Find_user(id);
-					
-					printf("=========================\nUser Information\n");
-					printf("ID: %s, PW: %s\n",id,pw);
-					printf("=========================\n");
-					
-
-					if(user_idx >= 0)
-					{
-						if(strcmp(user_PW[user_idx],pw) == 0) // Log in success
-						{
-							LOG_IN_SUCCESS(msg,id);
-							send(new_fd , msg, strlen(msg)+1,0);
-							printf("%s\n\n",msg);
-						}
-						else // Log in fail
-						{
-							send(new_fd , LOG_IN_FAIL, strlen(LOG_IN_FAIL)+1,0);
-							printf("%s\n\n",LOG_IN_FAIL);
-						}
-					}
-					else // Not found user ID
-					{
-						send(new_fd , NOT_FIND_USER, strlen(NOT_FIND_USER)+1,0);
-						printf("%s\n\n",NOT_FIND_USER);
-					}
-				}
-				else {
-					printf("data loss\n");
-				}
+				case RECV_NO_ERROR:
+					/*  */
+					break;
+				case RECV_EERROR:
+					printf("Data received Error\n\n");
+					break;
+				case DATAFRAMES_MISMATCH:
+					printf("Dataframes mismatch\n\n");
+					break;
+				case MALFUNCTION:
+				default:
+					printf("Client_Log_in() Malfunction\n\n");
 			}
 			memset(buf, 0, sizeof(buf));
 			close(new_fd);
@@ -152,12 +123,68 @@ int main(void)
 	return 0; 
 }
 
-void Client_Log_in(int client_fd)
+int Client_Log_in(int client_fd, char *buf)
 {
-	char buf[512];
+	int rcv_byte, msg_len = 0, len = 0;
 	char id[20];
 	char pw[20];
+	char msg[512];
+	char *pdiv;
+	int div_idx = 0, user_idx = -1;
+
+	rcv_byte=recv(client_fd,&msg_len,sizeof(msg_len),0); // received data length
+	if(rcv_byte>0)
+	{
+		while(len < msg_len)
+		{
+			int rcv = recv(client_fd, buf + len, msg_len-len,0);
+			if(rcv <= 0) return RECV_EERROR; //Data Not received
+			len += rcv;
+		}
+		buf[len] = '\0';
+		pdiv = strchr(buf,'|');
+		if(pdiv != NULL)
+		{
+			//printf("rx data : %s\n",buf);
+			div_idx = pdiv-buf;
+			strncpy(id, buf,div_idx);
+			id[div_idx]='\0';
+			int pw_len = strlen(buf) - div_idx - 1;
+			strncpy(pw, pdiv+1,pw_len);
+
+			pw[pw_len]='\0';
+			user_idx = Find_user(id);
+			
+			printf("=========================\nUser Information\n");
+			printf("ID: %s, PW: %s\n",id,pw);
+			printf("=========================\n");
+			
+			if(user_idx >= 0)
+			{
+				if(strcmp(user_PW[user_idx],pw) == 0) // Log in success
+				{
+					LOG_IN_SUCCESS(msg,id);
+					send(client_fd , msg, strlen(msg)+1,0);
+					printf("%s\n\n",msg);
+				}
+				else // Log in fail
+				{
+					send(client_fd , LOG_IN_FAIL, strlen(LOG_IN_FAIL)+1,0);
+					printf("%s\n\n",LOG_IN_FAIL);
+				}
+			}
+			else // Not found user ID
+			{
+				send(client_fd , NOT_FIND_USER, strlen(NOT_FIND_USER)+1,0);
+				printf("%s\n\n",NOT_FIND_USER);
+			}
+			return RECV_NO_ERROR;
+		}
+		else return DATAFRAMES_MISMATCH;
+	}
+	else return RECV_EERROR; //Data Not received
 	
+	return MALFUNCTION;
 }
 
 int Find_user(char *target)

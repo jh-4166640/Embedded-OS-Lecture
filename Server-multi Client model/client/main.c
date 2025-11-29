@@ -21,6 +21,7 @@ int main(void)
     char id[20];
     char pw[20];
     char send_msg[512];
+    int msg_len = 0;
 
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if(sockfd == -1)
@@ -55,10 +56,14 @@ int main(void)
     pw[strcspn(pw,"\n")] = '\0';
     
     snprintf(send_msg, sizeof(send_msg),"%s|%s",id,pw);
+    msg_len = strlen(send_msg);
+    send(sockfd, &msg_len,sizeof(msg_len),0);
     send(sockfd, send_msg, strlen(send_msg), 0);
 
+    //printf("tx data(size,data): (%d, %s)\n",msg_len,send_msg);
+
     rcv_byte = recv(sockfd, buf, sizeof(buf), 0);
-    printf("%s\n",buf);
+    printf("%s\n\n",buf);
 
     close(sockfd); 
     return 0;
