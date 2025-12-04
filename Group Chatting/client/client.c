@@ -114,7 +114,7 @@ int Server_Log_in(int sockfd)
     printf("ID: ");
     fgets(id,sizeof(id),stdin);
     id[strcspn(id,"\n")] = '\0';
-
+    
     printf("PW: ");
     fgets(pw,sizeof(pw),stdin);
     pw[strcspn(pw,"\n")] = '\0';
