@@ -26,6 +26,15 @@
 #define NOT_FIND_USER			 "Not Find user ID"
 #define MAX_USER 2
 
+/*share memory size*/
+#define MSG_SIZE 512
+#define MSG_BUFFER_SIZE 256
+
+/*share memory and semaphore key value*/
+#define SHM_KEY 1234
+#define SEM_KEY 5678
+
+
 char *user_ID[MAX_USER]= {"user1","user2"};
 char *user_PW[MAX_USER]= {"passwd1","passwd2"};
 
@@ -34,8 +43,27 @@ char *user_PW[MAX_USER]= {"passwd1","passwd2"};
 void Send_Message_Process(int sockfd, char *msg);
 void Group_Chatting_Process(int sockfd, char *msg, char *buf);
 
-int Client_Log_in(int client_fd,char *buf);
+int Client_Log_in(int client_fd,char *buf,int *user_num);
 int Find_user(char * target);
+
+void* shared_memory_write_thread(void* arg);
+void* shared_memory_read_thread(void* arg);
+
+/* share memory */
+struct share_memory{
+	char msg[MSG_BUFFER_SIZE][MSG_SIZE];
+	int write_idx;
+	int read_idx[MAX_USER];
+};
+struct thread_arg {
+    struct share_memory* sh;
+    int user_id;
+	int sockid;
+};
+//semaphore id 전역변수로 설정
+int semid;
+
+
 
 int main(void)
 {
@@ -49,6 +77,30 @@ int main(void)
 	char buf[512];
 	int val = 1;
 	
+	/*share memory and semaphore 생성==========*/
+	int shmid= shmget(SHM_KEY, sizeof(struct share_memory),IPC_CREAT | 0666);
+	if (shmid < 0) {
+		perror("shmget");
+		exit(1);
+	}
+	struct share_memory* sh_data=(struct share_memory*) shmat(shmid,NULL,0);
+		
+	sh_data->write_idx = 0;
+	for (int i = 0; i < MAX_USER; i++)
+    	sh_data->read_idx[i] = 0;
+	for (int i = 0; i < MSG_BUFFER_SIZE; i++) {
+    	memset(sh_data->msg[i], 0, MSG_SIZE);
+	}
+	if (sh_data == (void*)-1) {
+		perror("shmat");
+		exit(1);
+	}
+	semid= semget(SEM_KEY,1,IPC_CREAT | 0666);
+	
+	union semun su;
+	su.val = 1;
+	semctl(semid,0,SETVAL,su);
+	//==========================================
 	sockfd = socket(AF_INET, SOCK_STREAM, 0); // socket(~,~,protocol); protocol == 0 mean Auto Set protocol
 	if(sockfd == -1)
 	{
@@ -100,12 +152,32 @@ int main(void)
 		}
 		else if(pid == 0) // child process
 		{
+			int user_num;
 			send(new_fd , INIT_MSG, strlen(INIT_MSG)+1,0);
-			int receive_res = Client_Log_in(new_fd,buf);
+			int receive_res = Client_Log_in(new_fd,buf,&user_num);
 			switch(receive_res)
 			{
 				case RECV_NO_ERROR:
-					/*  */
+					pthread_t tid_write,tid_read;
+					int ret;
+					//지역변수임으로 스레드에 사용하기 위해 malloc 사용
+					struct thread_arg* arg = malloc(sizeof(struct thread_arg));
+					arg->sh = sh_data;
+					arg->user_id = user_num;
+					arg->sockid = new_fd;
+
+					ret=pthread_create(&tid_write, NULL,shared_memory_write_thread,arg);
+					if (ret != 0) {
+						fprintf(stderr, "pthread_create(write_thread) 실패: %s\n", strerror(ret));
+						exit(1);
+					}
+					ret=pthread_create(&tid_read,NULL,shared_memory_read_thread,arg);
+						fprintf(stderr, "pthread_create(read_thread) 실패: %s\n", strerror(ret));
+						exit(1);
+					}
+					pthread_join(tid_write,NULL);
+					pthread_join(tid_read,NULL);
+					
 					break;
 				case RECV_EERROR:
 					printf("Data received Error\n\n");
@@ -133,7 +205,7 @@ int main(void)
 	return 0; 
 }
 
-int Client_Log_in(int client_fd, char *buf)
+int Client_Log_in(int client_fd, char *buf, int *user_num)
 {
 	int rcv_byte, msg_len = 0, len = 0;
 	char id[20];
@@ -164,6 +236,8 @@ int Client_Log_in(int client_fd, char *buf)
 
 			pw[pw_len]='\0';
 			user_idx = Find_user(id);
+			//추가 구현(user num 따오기)
+			*user_num=user_idx;
 			
 			printf("=========================\nUser Information\n");
 			printf("ID: %s, PW: %s\n",id,pw);
@@ -215,14 +289,14 @@ int Find_user(char *target)
 	return idx;
 }
 
-void Send_Message_Process(int sockfd, char *msg)
+void Send_Message(int sockfd, char *msg)
 {
     int msg_len = strlen(msg);
     send(sockfd, &msg_len,sizeof(msg_len),0);
     send(sockfd, msg, strlen(msg), 0);
 }
 
-int Recv_Message_Process(int sockfd, char *buf)
+int Recv_Message(int sockfd, char *buf)
 {
     int rcv_byte, msg_len = 0, len = 0;
 
@@ -240,4 +314,67 @@ int Recv_Message_Process(int sockfd, char *buf)
         return 0;
     }
     return DATA_NOT_RECEIVED; // Data Not received
+}
+//세마포 연산
+void P(int semid)
+{
+    struct sembuf p = {0, -1, 0};  // 0번 세마포에 대해 -1
+    if (semop(semid, &p, 1) == -1) {
+        perror("P semop");
+        exit(1);
+    }
+}
+
+void V(int semid)
+{
+    struct sembuf v = {0, +1, 0};  // 0번 세마포에 대해 +1
+    if (semop(semid, &v, 1) == -1) {
+        perror("V semop");
+        exit(1);
+    }
+}
+//write thread
+void* shared_memory_write_thread(void* arg){
+	struct thread_arg* k=(struct thread_arg*)arg;
+	struct share_memory* sh_data = k->sh;
+	int user_num=k->user_id;
+	int sockid=k->sockid;
+
+	char input_buf_th[512];
+	while(1){
+		Recv_Message(sockid,input_buf_th);
+		P(semid);
+		strncpy(sh_data->msg[sh_data->write_idx], input_buf_th, MSG_SIZE - 1);
+		sh_data->msg[sh_data->write_idx][MSG_SIZE - 1] = '\0';
+		sh_data->read_idx[user_num] = (r + 1) % MSG_BUFFER_SIZE;
+        sh_data->write_idx = (sh_data->write_idx + 1) % MSG_BUFFER_SIZE;
+        V(semid);
+	}	
+	return NULL;
+}
+//read thread
+void* shared_memory_read_thread(void* arg){
+	struct thread_arg* k=(struct thread_arg*)arg;
+	struct share_memory* sh_data = k->sh;
+	int user_num=k->user_id;
+	int sockid=k->sockid;
+	int r, w;
+
+
+	while(1){
+
+		P(semid);
+		r = sh_data->read_idx[user_num];
+        w = sh_data->write_idx;
+		V(semid);
+		if(w != r){
+			
+			Send_Message(sockid,sh_data->msg[r]);
+			sh_data->read_idx[user_num] = (r + 1) % MSG_BUFFER_SIZE;
+        	
+		}
+		
+	}
+	return NULL;	
+
 }
