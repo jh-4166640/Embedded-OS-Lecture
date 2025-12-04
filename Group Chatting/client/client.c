@@ -34,7 +34,7 @@ void Send_Message(int sockfd, char *msg);
 int Recv_Message(int sockfd, char *buf);
 int Server_Log_in(int sockfd, char *name);
 void Group_Chatting(int sockfd, char *name);
-void* Recv_Message_Process(void *arg)
+void* Recv_Message_Process(void *arg);
 
 
 int Socket_Init(int *sockfd, struct sockaddr_in *addr)

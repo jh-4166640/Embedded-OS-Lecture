@@ -34,7 +34,7 @@ char *user_PW[MAX_USER]= {"passwd1","passwd2"};
 
 void Send_Message(int sockfd, char *msg);
 int Recv_Message(int sockfd, char *buf);
-//void Group_Chatting_Process(int sockfd, char *msg, char *buf);
+void Group_Chatting_Process(int sockfd, char *msg, char *buf);
 
 int Client_Log_in(int client_fd, char *buf);
 int Find_user(char *target);
@@ -107,7 +107,8 @@ int main(void)
 			switch(receive_res)
 			{
 				case RECV_NO_ERROR:
-					/*  */
+					/* Client와 Group_Talk */
+					Group_Chatting_Process(sockfd, *msg, *buf);
 					break;
 				case RECV_EERROR:
 					printf("Data received Error\n\n");
@@ -246,4 +247,29 @@ int Recv_Message(int sockfd, char *buf)
         return 0;
     }
     return DATA_NOT_RECEIVED; // Data Not received
+}
+
+
+void Group_Chatting_Process(int sockfd, char *msg, char *buf);
+{
+	pthread_t recv_tid;
+	//pthread_t file_wait_tid;
+	char tx_buf[512];
+
+	thread_data_t *thread_data = malloc(sizeof(thread_data_t));
+	thread_data->sockfd = sockfd;
+	memset(thread_data->rx, 0, sizeof(thread_data->rx));
+
+	pthread_create(&recv_tid, NULL, Recv_Message_Process, thread_data); // Recieve thread
+	pthread_detach(recv_tid);
+	while(1) // Transmit loop
+	{
+		fgets(tx_buf,sizeof(tx_buf),stdin);
+		tx_buf[strcspn(tx_buf,"\n")] = '\0';
+		if(strcmp(tx_buf,"exit")==0)
+		{
+			close(sockfd);
+			break;
+		}
+	}	
 }
