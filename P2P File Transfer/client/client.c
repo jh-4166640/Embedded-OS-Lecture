@@ -14,9 +14,9 @@
 
 
 #define SERV_IP     "220.149.128.92"
-#define SERV_PORT   4485 // 고정
-#define MYP2P_IP    "220.149.128.9x" // 할 때 마다 바꿔줘야 함
-#define MYP2P_PORT  448x // 클라이언트 포트 // 할 때 마다 바꿔줘야 함
+#define SERV_PORT   4467 // 고정
+#define MYP2P_IP    "220.149.128.91" // 할 때 마다 바꿔줘야 함
+#define MYP2P_PORT  4486 // 클라이언트 포트 // 할 때 마다 바꿔줘야 함
 
 #define BACKLOG      10
 #define ACCEPT_ERROR -1
@@ -37,7 +37,6 @@
 #else
 #define P2P_SHARE_DIR_PATH "/home/st2021146036/P2P_shared_files"
 #endif
-
 
 
 typedef struct{
@@ -202,32 +201,21 @@ void* Recv_Message_Process(void *arg)
         {
             if(strncmp(buf,"$FILE",5)==0) // P2P file request command
             {
-                print("$FILE command received.\n");
-                int pid=fork();
-                if(pid<0)
+                printf("$FILE command received.\n");
+                buf[strcspn(buf, "\n")] = '\0';
+                printf("buf %s\n", buf);
+                char *token = strtok(buf, "|");  // $FILE
+                token = strtok(NULL, "|");         // userN
+                char *ip = strtok(NULL, "|");      // ip
+                char *port = strtok(NULL, "|");    // port
+                printf("%s %s %s\n", token, ip, port);
+                if(token != NULL && ip != NULL && port != NULL)
                 {
-                    perror("fork() error lol!");
-                    continue;
+                    short p2p_port = (short)atoi(port);
+
+                    P2P_Client(p2p_port, ip); // File 전송하는 쪽이 Client
+                    memset(buf, 0, sizeof(buf));
                 }
-                else if(pid == 0) // child process
-                {
-                    buf[strcspn(buf, "\n")] = '\0';
-                    char *token = strtok(buf, "|");  // $FILE
-                    token = strtok(NULL, "|");         // userN
-                    char *ip = strtok(NULL, "|");      // ip
-                    char *port = strtok(NULL, "|");    // port
-                    if(token != NULL && ip != NULL && port != NULL)
-                    {
-                        short p2p_port = (short)atoi(port);
-                        P2P_Client(p2p_port, ip); // File 전송하는 쪽이 Client
-                    }
-                    exit(0);
-                }
-                else if(pid > 0) // parent process
-                {
-                    waitpid(pid, NULL, WNOHANG);  // Prevent zombie processes
-                }
-                
             }
             else printf("%s\n",buf);
         }
@@ -264,21 +252,25 @@ void Group_Chatting(int sockfd, char *name)
         else if(strncmp(tx_buf,"$FILE",5)==0) // P2P file request command
         // full command $FILE <USER_N>
         {
-            int pid = fork();
-            if(pid<0)
-            {
-                perror("fork() error lol!");
-                continue;
-            }
-            else if(pid == 0) // child process
-            {
-                P2P_Server(); // File 받는 쪽이 Server
+            printf("%s\n",tx_buf);
+            Send_Message(sockfd, tx_buf); // Notify server about P2P file transfer request
+            P2P_Server(); // File 받는 쪽이 Server
+
+            // int pid = fork();
+            // if(pid<0)
+            // {
+            //     perror("fork() error lol!");
+            //     continue;
+            // }
+            // else if(pid == 0) // child process
+            // {
                 
-            }
-            else if(pid > 0) // parent process
-            {
-                waitpid(pid, NULL, WNOHANG);  // Prevent zombie processes
-            }
+            //     P2P_Server(); // File 받는 쪽이 Server    
+            // }
+            // else if(pid > 0) // parent process
+            // {
+            //     waitpid(pid, NULL, WNOHANG);  // Prevent zombie processes
+            // }
         }
         else Send_Message(sockfd, tx_buf);
     }
@@ -323,6 +315,7 @@ int P2P_Server_Init(int *sockfd, struct sockaddr_in *my_addr)
     else printf("P2P Server-socket() sockfd is OK...\n");
     my_addr->sin_family = AF_INET;
     my_addr->sin_port = htons(MYP2P_PORT); // Client가 P2P 에서 Server가 되는 Port
+    
     my_addr->sin_addr.s_addr = INADDR_ANY;
     memset(&(my_addr->sin_zero),0,8);
     if(setsockopt(*sockfd, SOL_SOCKET, SO_REUSEADDR,(char*)&val,sizeof(val))<0)
@@ -369,13 +362,20 @@ void P2P_Server() // File을 받는 쪽
     }
     else if(sock_res == 0)
     {
+        printf("accept start\n");
+        /*
+        sin_size = sizeof(struct sockaddr_in);
+		new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);   
+        */
         sin_size = sizeof(struct sockaddr_in);
         P2Pclient_fd = accept(P2Pserver_fd, (struct sockaddr *)&client_addr, &sin_size);   
+        printf("accept finish\n");
         if(P2Pclient_fd < 0)
         {
             perror("accept() error lol!");
             return;
         }
+        printf("P2P Client connected from %s\n", inet_ntoa(client_addr.sin_addr));
         // P2P connection established, now can send/receive files
         Send_Message(P2Pclient_fd, "P2P Conneected");
     }
@@ -396,6 +396,9 @@ void P2P_Client(short port, const char *ip) // File을 전송하는 쪽
     char buf[512];
     char file_list[512];
 
+    printf("P2P Client connecting to %d:%s\n", port, ip);
+    
+    sleep(10);
     int sock_res = Socket_Init(&P2Pserver_fd, &server_addr, port, ip);
     if(sock_res == ACCEPT_ERROR)
     {
@@ -410,6 +413,5 @@ void P2P_Client(short port, const char *ip) // File을 전송하는 쪽
     printf("P2P Client is closing ... \n");
     close(P2Pserver_fd);
     return;
-
 }
 

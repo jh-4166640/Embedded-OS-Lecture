@@ -13,7 +13,7 @@
 #include <sys/wait.h>
 
 #define SERV_IP      "220.149.128.92"
-#define SERV_PORT   4485 // 고정
+#define SERV_PORT   4467 // 고정
 #define BACKLOG      10
 /* Client_Log_in return code */
 #define MALFUNCTION       		-2
@@ -52,6 +52,9 @@ char EXIT_FLAG[MAX_USER]={0,};
 
 char *user_ID[MAX_USER]= {"user1","user2","user3"};
 char *user_PW[MAX_USER]= {"passwd1","passwd2","passwd3"};
+
+char user_IP[MAX_USER][64];
+char user_PORT[MAX_USER][16];
 
 #define DATA_NOT_RECEIVED -1
 
@@ -288,6 +291,8 @@ int Client_Log_in(int client_fd, char *buf,int *user_num)
 					sprintf(msg,"%s|%d",send_temp,LOG_IN_SUCCESS_VAL);
 					send(client_fd , msg, strlen(msg)+1,0);
 					//printf("%s\n\n",msg);
+					Recv_Message(client_fd, user_IP[user_idx]); // receive P2P IP
+					Recv_Message(client_fd, user_PORT[user_idx]); // receive P2P PORT
 					return LOG_IN_SUCCESS_VAL;
 				}
 				else // Log in fail
@@ -463,7 +468,7 @@ void* shared_memory_read_thread(void* arg){
 				command_idx=command_loc-input_buf_th;
 
 				if(strncmp(input_buf_th+command_idx,"$FILE|",6)==0){
-				=
+				
 					file_op_flag=FILE_P2P_ON;
 					char *tid = input_buf_th + command_idx + 6;
 					strncpy(target_id, tid, sizeof(target_id)-1);
@@ -476,7 +481,6 @@ void* shared_memory_read_thread(void* arg){
 						strncpy(receive_id, input_buf_th + 1, username_len);
 						receive_id[username_len] = '\0';   // NULL terminate
 					}
-					
 
 				}
 			}
@@ -486,14 +490,16 @@ void* shared_memory_read_thread(void* arg){
 				file_op_flag=FILE_P2P_OFF;
 				receive_user_num=Find_user(receive_id);
 				target_user_num=Find_user(target_id);
-				if(target_user_num==-1){
-					
+				printf("rec %d tar %d\n",receive_user_num,target_user_num);
+				if(target_user_num==-1)
+				{
 					// Send_Message(sockid,NOT_FIND_USER);
 					sh_data->read_idx[user_num] = (r + 1) % MSG_BUFFER_SIZE;
 					break;
 				}
 				if(target_user_num==user_num){
-					sprintf(transmit_ip_port,"$FILE|%s|%s\n",user_IP[target_user_num],user_PORT[target_user_num]);
+					sprintf(transmit_ip_port,"$FILE|%s|%s|%s\n",target_id,user_IP[receive_user_num],user_PORT[receive_user_num]);
+					printf("FILE_P2P_ON%s\n",transmit_ip_port);
 					Send_Message(sockid,transmit_ip_port);
 					sh_data->read_idx[user_num] = (r + 1) % MSG_BUFFER_SIZE;
 				}
