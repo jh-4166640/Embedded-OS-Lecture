@@ -21,7 +21,8 @@
 #define LOG_IN_FAIL_VAL		 	1
 #define NOT_FIND_USER_VAL		2
 
-#define LOG_IN_SUCCESS(msg,user) sprintf(msg,"Log-in success!! [%s] *^^*",user)
+#define LOG_IN_SUCCESS(msg,user) sprintf(msg,"Log-in success [%s]",user)
+#define LOG_IN_SUCCESS_STR(msg, user) sprintf(msg,"Welcome to the TUlk [%s]",user)
 #define LOG_IN_FAIL				 "Log-in fail: Incorrect password..."
 #define NOT_FIND_USER			 "Not Find user ID"
 #define MAX_USER 2
@@ -31,11 +32,12 @@ char *user_PW[MAX_USER]= {"passwd1","passwd2"};
 
 #define DATA_NOT_RECEIVED -1
 
-void Send_Message_Process(int sockfd, char *msg);
-void Group_Chatting_Process(int sockfd, char *msg, char *buf);
+void Send_Message(int sockfd, char *msg);
+int Recv_Message(int sockfd, char *buf);
+//void Group_Chatting_Process(int sockfd, char *msg, char *buf);
 
-int Client_Log_in(int client_fd,char *buf);
-int Find_user(char * target);
+int Client_Log_in(int client_fd, char *buf);
+int Find_user(char *target);
 
 int main(void)
 {
@@ -173,11 +175,15 @@ int Client_Log_in(int client_fd, char *buf)
 			{
 				if(strcmp(user_PW[user_idx],pw) == 0) // Log in success
 				{
-					char temp[128];
+					char temp[64];
+					char send_temp[64];
 					LOG_IN_SUCCESS(temp,id);
-					sprintf(msg,"%s|%d",temp,LOG_IN_SUCCESS_VAL);
+					printf("%s\n\n",temp);
+
+					LOG_IN_SUCCESS_STR(send_temp, id);
+					sprintf(msg,"%s|%d",send_temp,LOG_IN_SUCCESS_VAL);
 					send(client_fd , msg, strlen(msg)+1,0);
-					printf("%s\n\n",msg);
+					//printf("%s\n\n",msg);
 				}
 				else // Log in fail
 				{
@@ -215,14 +221,14 @@ int Find_user(char *target)
 	return idx;
 }
 
-void Send_Message_Process(int sockfd, char *msg)
+void Send_Message(int sockfd, char *msg)
 {
     int msg_len = strlen(msg);
     send(sockfd, &msg_len,sizeof(msg_len),0);
     send(sockfd, msg, strlen(msg), 0);
 }
 
-int Recv_Message_Process(int sockfd, char *buf)
+int Recv_Message(int sockfd, char *buf)
 {
     int rcv_byte, msg_len = 0, len = 0;
 
