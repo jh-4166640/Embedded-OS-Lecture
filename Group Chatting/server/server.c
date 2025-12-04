@@ -27,7 +27,6 @@ char *user_PW[MAX_USER]= {"passwd1","passwd2"};
 int Client_Log_in(int client_fd,char *buf);
 int Find_user(char * target);
 
-
 int main(void)
 {
 	int sockfd, new_fd;
@@ -201,4 +200,3 @@ int Find_user(char *target)
 	}
 	return idx;
 }
-

@@ -8,12 +8,15 @@
 #include <arpa/inet.h>
 
 
-
+#include <pthread.h>
 
 
 #define SERV_IP     "220.149.128.92"
 #define SERV_PORT   4480 // 고정
-#define P2P_PORT    4001
+//#define P2P_PORT    4001
+
+void Send_Message_Process(int sockfd, char *msg);
+void Group_Chatting_Process(int sockfd, char *msg, char *buf);
 
 int main(void)
 {
@@ -26,6 +29,9 @@ int main(void)
     char pw[20];
     char send_msg[512];
     int msg_len = 0;
+
+    pthread_t recv_tid;
+    pthread_t file_wait_tid;
 
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if(sockfd == -1)
@@ -60,18 +66,25 @@ int main(void)
     pw[strcspn(pw,"\n")] = '\0';
     
     snprintf(send_msg, sizeof(send_msg),"%s|%s",id,pw);
-    msg_len = strlen(send_msg);
-    send(sockfd, &msg_len,sizeof(msg_len),0);
-    send(sockfd, send_msg, strlen(send_msg), 0);
+    Send_Message_Process(sockfd, send_msg);
+    // msg_len = strlen(send_msg);
+    // send(sockfd, &msg_len,sizeof(msg_len),0);
+    // send(sockfd, send_msg, strlen(send_msg), 0);
 
     //printf("tx data(size,data): (%d, %s)\n",msg_len,send_msg);
 
     rcv_byte = recv(sockfd, buf, sizeof(buf), 0);
+
+    
     printf("%s\n\n",buf);
 
     close(sockfd); 
     return 0;
+}
 
-
-    
+void Send_Message_Process(int sockfd, char *msg)
+{
+    int msg_len = strlen(msg);
+    send(sockfd, &msg_len,sizeof(msg_len),0);
+    send(sockfd, msg, strlen(msg), 0);
 }
