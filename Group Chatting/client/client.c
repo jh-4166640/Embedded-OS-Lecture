@@ -20,9 +20,9 @@
 #define DATA_NOT_RECEIVED -1
 
 /* Log in 관련 숫자 */
-#define LOG_IN_SUCCESS_VAL		0
-#define LOG_IN_FAIL_VAL		 	1
-#define NOT_FIND_USER_VAL		2
+#define LOG_IN_SUCCESS_VAL		1
+#define LOG_IN_FAIL_VAL		 	2
+#define NOT_FIND_USER_VAL		3
 
 typedef struct{
     int sockfd;
@@ -79,7 +79,6 @@ int main(void)
     int login_status = Server_Log_in(sockfd, name);
     if(login_status == LOG_IN_SUCCESS_VAL)
     {
-        printf("welcome to the TUlk\n");
         printf("=================================\n");
         Group_Chatting(sockfd, name);
     }
@@ -120,10 +119,10 @@ int Recv_Message(int sockfd, char *buf)
 int Server_Log_in(int sockfd, char *name)
 {
     int rcv_byte;
-    char buf[512];
+    char buf[128];
     char id[20];
     char pw[20];
-    char send_msg[512];
+    char send_msg[128];
     int div_idx = 0;
     char msg[128];
     char res[2];
@@ -144,12 +143,15 @@ int Server_Log_in(int sockfd, char *name)
     //printf("tx data(size,data): (%d, %s)\n",msg_len,send_msg);
     rcv_byte = recv(sockfd, buf, sizeof(buf), 0); // Login 결과 수신
 
-    char *pdiv = strchr(buf,'|');
+    char *pdiv = strchr(buf,'|'); // Log in 결과의 구분자 찾기
     if(pdiv != NULL)
     {
+        /* Log in 결과 문장 메세지 */
         div_idx = pdiv-buf;
         strncpy(msg, buf, div_idx);
         msg[div_idx]='\0';
+
+        /* Log in 결과 예약어 메세지 */
         int res_len = strlen(buf) - div_idx - 1;
         strncpy(res, pdiv+1,res_len);
         strncpy(name, id, sizeof(id));
@@ -157,7 +159,7 @@ int Server_Log_in(int sockfd, char *name)
     }
     else return DATA_NOT_RECEIVED;
 
-    printf("%s",msg);
+    printf("%s\n",msg);
     return atoi(res);
 }
 
@@ -171,7 +173,8 @@ void* Recv_Message_Process(void *arg)
     while(1)
     {
         int rcv_status = Recv_Message(sockfd, buf);
-        if(rcv_status == 0)
+        // Wait for messages from server
+        if(rcv_status == 0) // Message received successfully
         {
             printf("%s\n",buf);
         }
@@ -198,12 +201,13 @@ void Group_Chatting(int sockfd, char *name)
     pthread_detach(recv_tid);
     while(1) // Transmit loop
     {
-        fgets(tx_buf,sizeof(tx_buf),stdin);
+        fgets(tx_buf,sizeof(tx_buf),stdin); // Wait for user input
         tx_buf[strcspn(tx_buf,"\n")] = '\0';
         if(strcmp(tx_buf,"exit")==0)
         {
             close(sockfd);
             break;
         }
+        else Send_Message(sockfd, tx_buf);
     }
 }

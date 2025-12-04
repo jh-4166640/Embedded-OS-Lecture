@@ -7,19 +7,21 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include <pthread.h>
+
 #define SERV_IP		"220.149.128.92"
 #define SERV_PORT	4480 // 고정
 #define BACKLOG		10
 /* Client_Log_in return code */
-#define MALFUNCTION 		2
+#define MALFUNCTION 		-2
 #define RECV_EERROR 		-1
 #define RECV_NO_ERROR 		0
-#define DATAFRAMES_MISMATCH 1
+#define DATAFRAMES_MISMATCH -3
 
 #define INIT_MSG "=========================\nHello! I'm P2P File Sharing Server\nPlease, LOG-IN!\n=========================\n"
-#define LOG_IN_SUCCESS_VAL		0
-#define LOG_IN_FAIL_VAL		 	1
-#define NOT_FIND_USER_VAL		2
+#define LOG_IN_SUCCESS_VAL		1
+#define LOG_IN_FAIL_VAL		 	2
+#define NOT_FIND_USER_VAL		3
 
 #define LOG_IN_SUCCESS(msg,user) sprintf(msg,"Log-in success [%s]",user)
 #define LOG_IN_SUCCESS_STR(msg, user) sprintf(msg,"Welcome to the TUlk [%s]",user)
@@ -32,12 +34,21 @@ char *user_PW[MAX_USER]= {"passwd1","passwd2"};
 
 #define DATA_NOT_RECEIVED -1
 
+typedef struct{
+    int sockfd;
+    char rx[512];
+} thread_data_t;
+
+
 void Send_Message(int sockfd, char *msg);
 int Recv_Message(int sockfd, char *buf);
-void Group_Chatting_Process(int sockfd, char *msg, char *buf);
+void Group_Chatting(int sockfd);
+void* Recv_Message_Process(void *arg);
 
 int Client_Log_in(int client_fd, char *buf);
 int Find_user(char *target);
+
+
 
 int main(void)
 {
@@ -49,6 +60,7 @@ int main(void)
 	/* buffer */
 	int rcv_byte;
 	char buf[512];
+	char msg[512];
 	int val = 1;
 	
 	sockfd = socket(AF_INET, SOCK_STREAM, 0); // socket(~,~,protocol); protocol == 0 mean Auto Set protocol
@@ -106,9 +118,15 @@ int main(void)
 			int receive_res = Client_Log_in(new_fd,buf);
 			switch(receive_res)
 			{
-				case RECV_NO_ERROR:
+				case LOG_IN_SUCCESS_VAL:
 					/* Client와 Group_Talk */
-					Group_Chatting_Process(sockfd, *msg, *buf);
+					Group_Chatting(new_fd);
+					break;
+				case LOG_IN_FAIL_VAL:
+					break;
+				case NOT_FIND_USER_VAL:
+					break;
+				case RECV_NO_ERROR:
 					break;
 				case RECV_EERROR:
 					printf("Data received Error\n\n");
@@ -185,12 +203,14 @@ int Client_Log_in(int client_fd, char *buf)
 					sprintf(msg,"%s|%d",send_temp,LOG_IN_SUCCESS_VAL);
 					send(client_fd , msg, strlen(msg)+1,0);
 					//printf("%s\n\n",msg);
+					return LOG_IN_SUCCESS_VAL;
 				}
 				else // Log in fail
 				{
 					sprintf(msg,"%s|%d",LOG_IN_FAIL,LOG_IN_FAIL_VAL);
 					send(client_fd , msg, strlen(msg)+1,0);
 					printf("%s\n\n",LOG_IN_FAIL);
+					return LOG_IN_FAIL_VAL;
 				}
 			}
 			else // Not found user ID
@@ -198,8 +218,8 @@ int Client_Log_in(int client_fd, char *buf)
 				sprintf(msg,"%s|%d",NOT_FIND_USER,NOT_FIND_USER_VAL);
 				send(client_fd , msg, strlen(msg)+1,0);
 				printf("%s\n\n",NOT_FIND_USER);
+				return NOT_FIND_USER_VAL;
 			}
-			return RECV_NO_ERROR;
 		}
 		else return DATAFRAMES_MISMATCH;
 	}
@@ -249,27 +269,50 @@ int Recv_Message(int sockfd, char *buf)
     return DATA_NOT_RECEIVED; // Data Not received
 }
 
-
-void Group_Chatting_Process(int sockfd, char *msg, char *buf);
+void* Recv_Message_Process(void *arg)
 {
-	pthread_t recv_tid;
-	//pthread_t file_wait_tid;
-	char tx_buf[512];
+    thread_data_t *data = (thread_data_t *)arg;
+    int sockfd = data->sockfd;
+    char *buf = data->rx;
 
-	thread_data_t *thread_data = malloc(sizeof(thread_data_t));
-	thread_data->sockfd = sockfd;
-	memset(thread_data->rx, 0, sizeof(thread_data->rx));
+    while(1)
+    {
+        int rcv_status = Recv_Message(sockfd, buf);
+        // Wait for messages from server
+        if(rcv_status == 0) // Message received successfully
+        {
+            printf("%s\n",buf);
+        }
+        else if(rcv_status == DATA_NOT_RECEIVED)
+        {
+            printf("Data not received or connection closed by server.\n");
+            free(data);
+            break;
+        }
+    }
+    return NULL;
+}
+void Group_Chatting(int sockfd)
+{
+    pthread_t recv_tid;
+    //pthread_t file_wait_tid;
+    char tx_buf[512];
 
-	pthread_create(&recv_tid, NULL, Recv_Message_Process, thread_data); // Recieve thread
-	pthread_detach(recv_tid);
-	while(1) // Transmit loop
-	{
-		fgets(tx_buf,sizeof(tx_buf),stdin);
-		tx_buf[strcspn(tx_buf,"\n")] = '\0';
-		if(strcmp(tx_buf,"exit")==0)
-		{
-			close(sockfd);
-			break;
-		}
-	}	
+    thread_data_t *thread_data = malloc(sizeof(thread_data_t));
+    thread_data->sockfd = sockfd;
+    memset(thread_data->rx, 0, sizeof(thread_data->rx));
+
+    pthread_create(&recv_tid, NULL, Recv_Message_Process, thread_data); // Recieve thread
+    pthread_detach(recv_tid);
+    while(1) // Transmit loop
+    {
+        fgets(tx_buf,sizeof(tx_buf),stdin); // Wait for user input
+        tx_buf[strcspn(tx_buf,"\n")] = '\0';   
+        if(strcmp(tx_buf,"exit")==0)
+        {
+            close(sockfd);
+            break;
+        }
+		else Send_Message(sockfd, tx_buf);
+    }
 }
