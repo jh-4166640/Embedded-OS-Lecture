@@ -7,6 +7,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/sem.h>
+#include <sys/wait.h>
+
 #include <pthread.h>
 
 #define SERV_IP		"220.149.128.92"
