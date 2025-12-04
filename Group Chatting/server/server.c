@@ -6,26 +6,32 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <pthread.h>
+#include <sys/shm.h>
+#include <sys/sem.h>
+#include <sys/ipc.h>
+#include <sys/wait.h>
 
 #define SERV_IP		"220.149.128.92"
 #define SERV_PORT	4480 // 고정
 #define BACKLOG		10
 /* Client_Log_in return code */
-#define MALFUNCTION 		2
+#define MALFUNCTION 		-2
 #define RECV_EERROR 		-1
 #define RECV_NO_ERROR 		0
-#define DATAFRAMES_MISMATCH 1
+#define DATAFRAMES_MISMATCH -3
 
 #define INIT_MSG "=========================\nHello! I'm P2P File Sharing Server\nPlease, LOG-IN!\n=========================\n"
-#define LOG_IN_SUCCESS_VAL		0
-#define LOG_IN_FAIL_VAL		 	1
-#define NOT_FIND_USER_VAL		2
 
-#define LOG_IN_SUCCESS(msg,user) sprintf(msg,"Log-in success!! [%s] *^^*",user)
+#define LOG_IN_SUCCESS_VAL		1
+#define LOG_IN_FAIL_VAL		 	2
+#define NOT_FIND_USER_VAL		3
+
+#define LOG_IN_SUCCESS(msg,user) sprintf(msg,"Log-in success [%s]",user)
+#define LOG_IN_SUCCESS_STR(msg, user) sprintf(msg,"Welcome to the TUlk [%s]",user)
 #define LOG_IN_FAIL				 "Log-in fail: Incorrect password..."
 #define NOT_FIND_USER			 "Not Find user ID"
 #define MAX_USER 2
-
 /*share memory size*/
 #define MSG_SIZE 512
 #define MSG_BUFFER_SIZE 256
@@ -40,7 +46,8 @@ char *user_PW[MAX_USER]= {"passwd1","passwd2"};
 
 #define DATA_NOT_RECEIVED -1
 
-void Send_Message_Process(int sockfd, char *msg);
+void Send_Message(int sockfd, char *msg);
+int Recv_Message(int sockfd, char *buf);
 void Group_Chatting_Process(int sockfd, char *msg, char *buf);
 
 int Client_Log_in(int client_fd,char *buf,int *user_num);
@@ -64,7 +71,11 @@ struct thread_arg {
 int semid;
 
 
-
+union semun{
+	int val;
+	struct semid_ds *buf;
+	unsigned short *array;
+};
 int main(void)
 {
 	int sockfd, new_fd;
@@ -157,7 +168,7 @@ int main(void)
 			int receive_res = Client_Log_in(new_fd,buf,&user_num);
 			switch(receive_res)
 			{
-				case RECV_NO_ERROR:
+				case LOG_IN_SUCCESS_VAL:
 					pthread_t tid_write,tid_read;
 					int ret;
 					//지역변수임으로 스레드에 사용하기 위해 malloc 사용
@@ -172,12 +183,19 @@ int main(void)
 						exit(1);
 					}
 					ret=pthread_create(&tid_read,NULL,shared_memory_read_thread,arg);
+					if (ret != 0) {
 						fprintf(stderr, "pthread_create(read_thread) 실패: %s\n", strerror(ret));
 						exit(1);
 					}
 					pthread_join(tid_write,NULL);
 					pthread_join(tid_read,NULL);
 					
+					break;
+				case LOG_IN_FAIL_VAL:
+					break;
+				case NOT_FIND_USER_VAL:
+					break;
+				case RECV_NO_ERROR:
 					break;
 				case RECV_EERROR:
 					printf("Data received Error\n\n");
@@ -205,7 +223,8 @@ int main(void)
 	return 0; 
 }
 
-int Client_Log_in(int client_fd, char *buf, int *user_num)
+
+int Client_Log_in(int client_fd, char *buf,int *user_num)
 {
 	int rcv_byte, msg_len = 0, len = 0;
 	char id[20];
@@ -236,9 +255,7 @@ int Client_Log_in(int client_fd, char *buf, int *user_num)
 
 			pw[pw_len]='\0';
 			user_idx = Find_user(id);
-			//추가 구현(user num 따오기)
 			*user_num=user_idx;
-			
 			printf("=========================\nUser Information\n");
 			printf("ID: %s, PW: %s\n",id,pw);
 			printf("=========================\n");
@@ -247,17 +264,23 @@ int Client_Log_in(int client_fd, char *buf, int *user_num)
 			{
 				if(strcmp(user_PW[user_idx],pw) == 0) // Log in success
 				{
-					char temp[128];
+					char temp[64];
+					char send_temp[64];
 					LOG_IN_SUCCESS(temp,id);
-					sprintf(msg,"%s|%d",temp,LOG_IN_SUCCESS_VAL);
+					printf("%s\n\n",temp);
+
+					LOG_IN_SUCCESS_STR(send_temp, id);
+					sprintf(msg,"%s|%d",send_temp,LOG_IN_SUCCESS_VAL);
 					send(client_fd , msg, strlen(msg)+1,0);
-					printf("%s\n\n",msg);
+					//printf("%s\n\n",msg);
+					return LOG_IN_SUCCESS_VAL;
 				}
 				else // Log in fail
 				{
 					sprintf(msg,"%s|%d",LOG_IN_FAIL,LOG_IN_FAIL_VAL);
 					send(client_fd , msg, strlen(msg)+1,0);
 					printf("%s\n\n",LOG_IN_FAIL);
+					return LOG_IN_FAIL_VAL;
 				}
 			}
 			else // Not found user ID
@@ -265,8 +288,8 @@ int Client_Log_in(int client_fd, char *buf, int *user_num)
 				sprintf(msg,"%s|%d",NOT_FIND_USER,NOT_FIND_USER_VAL);
 				send(client_fd , msg, strlen(msg)+1,0);
 				printf("%s\n\n",NOT_FIND_USER);
+				return NOT_FIND_USER_VAL;
 			}
-			return RECV_NO_ERROR;
 		}
 		else return DATAFRAMES_MISMATCH;
 	}
@@ -274,6 +297,7 @@ int Client_Log_in(int client_fd, char *buf, int *user_num)
 	
 	return MALFUNCTION;
 }
+
 
 int Find_user(char *target)
 {
@@ -315,6 +339,7 @@ int Recv_Message(int sockfd, char *buf)
     }
     return DATA_NOT_RECEIVED; // Data Not received
 }
+
 //세마포 연산
 void P(int semid)
 {
@@ -339,14 +364,19 @@ void* shared_memory_write_thread(void* arg){
 	struct share_memory* sh_data = k->sh;
 	int user_num=k->user_id;
 	int sockid=k->sockid;
+	int ret;
 
 	char input_buf_th[512];
 	while(1){
-		Recv_Message(sockid,input_buf_th);
+		ret=Recv_Message(sockid,input_buf_th);
+		if(ret==DATA_NOT_RECEIVED){
+			perror("data no recieve");
+			exit(1);
+		}
 		P(semid);
 		strncpy(sh_data->msg[sh_data->write_idx], input_buf_th, MSG_SIZE - 1);
 		sh_data->msg[sh_data->write_idx][MSG_SIZE - 1] = '\0';
-		sh_data->read_idx[user_num] = (r + 1) % MSG_BUFFER_SIZE;
+		sh_data->read_idx[user_num] = (sh_data->read_idx[user_num] + 1) % MSG_BUFFER_SIZE;
         sh_data->write_idx = (sh_data->write_idx + 1) % MSG_BUFFER_SIZE;
         V(semid);
 	}	
