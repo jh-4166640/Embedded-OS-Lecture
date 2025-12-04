@@ -17,12 +17,22 @@
 #define DATAFRAMES_MISMATCH 1
 
 #define INIT_MSG "=========================\nHello! I'm P2P File Sharing Server\nPlease, LOG-IN!\n=========================\n"
+#define LOG_IN_SUCCESS_VAL		0
+#define LOG_IN_FAIL_VAL		 	1
+#define NOT_FIND_USER_VAL		2
+
 #define LOG_IN_SUCCESS(msg,user) sprintf(msg,"Log-in success!! [%s] *^^*",user)
 #define LOG_IN_FAIL				 "Log-in fail: Incorrect password..."
 #define NOT_FIND_USER			 "Not Find user ID"
 #define MAX_USER 2
+
 char *user_ID[MAX_USER]= {"user1","user2"};
 char *user_PW[MAX_USER]= {"passwd1","passwd2"};
+
+#define DATA_NOT_RECEIVED -1
+
+void Send_Message_Process(int sockfd, char *msg);
+void Group_Chatting_Process(int sockfd, char *msg, char *buf);
 
 int Client_Log_in(int client_fd,char *buf);
 int Find_user(char * target);
@@ -163,19 +173,23 @@ int Client_Log_in(int client_fd, char *buf)
 			{
 				if(strcmp(user_PW[user_idx],pw) == 0) // Log in success
 				{
-					LOG_IN_SUCCESS(msg,id);
+					char temp[128];
+					LOG_IN_SUCCESS(temp,id);
+					sprintf(msg,"%s|%d",temp,LOG_IN_SUCCESS_VAL);
 					send(client_fd , msg, strlen(msg)+1,0);
 					printf("%s\n\n",msg);
 				}
 				else // Log in fail
 				{
-					send(client_fd , LOG_IN_FAIL, strlen(LOG_IN_FAIL)+1,0);
+					sprintf(msg,"%s|%d",LOG_IN_FAIL,LOG_IN_FAIL_VAL);
+					send(client_fd , msg, strlen(msg)+1,0);
 					printf("%s\n\n",LOG_IN_FAIL);
 				}
 			}
 			else // Not found user ID
 			{
-				send(client_fd , NOT_FIND_USER, strlen(NOT_FIND_USER)+1,0);
+				sprintf(msg,"%s|%d",NOT_FIND_USER,NOT_FIND_USER_VAL);
+				send(client_fd , msg, strlen(msg)+1,0);
 				printf("%s\n\n",NOT_FIND_USER);
 			}
 			return RECV_NO_ERROR;
@@ -199,4 +213,31 @@ int Find_user(char *target)
 		}
 	}
 	return idx;
+}
+
+void Send_Message_Process(int sockfd, char *msg)
+{
+    int msg_len = strlen(msg);
+    send(sockfd, &msg_len,sizeof(msg_len),0);
+    send(sockfd, msg, strlen(msg), 0);
+}
+
+int Recv_Message_Process(int sockfd, char *buf)
+{
+    int rcv_byte, msg_len = 0, len = 0;
+
+    rcv_byte=recv(sockfd,&msg_len,sizeof(msg_len),0); // received data length
+    if(rcv_byte>0)
+    {
+        while(len < msg_len)
+        {
+            int rcv = recv(sockfd, buf + len, msg_len-len,0);
+            if(rcv <= 0) return -1; //Data Not received
+            len += rcv;
+        }
+        buf[len] = '\0';
+        //printf("rx data : %s\n",buf);
+        return 0;
+    }
+    return DATA_NOT_RECEIVED; // Data Not received
 }
