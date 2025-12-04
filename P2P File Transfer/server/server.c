@@ -13,7 +13,7 @@
 #include <sys/wait.h>
 
 #define SERV_IP      "220.149.128.92"
-#define SERV_PORT   4480 // 고정
+#define SERV_PORT   4485 // 고정
 #define BACKLOG      10
 /* Client_Log_in return code */
 #define MALFUNCTION       		-2
@@ -39,6 +39,10 @@
 #define MAX_USER 		3
 #define MSG_SIZE 		512
 #define MSG_BUFFER_SIZE 256
+
+
+#define FILE_P2P_ON 1
+#define FILE_P2P_OFF 0
 
 /*share memory and semaphore key value*/
 #define SHM_KEY 7878
@@ -93,7 +97,7 @@ int main(void)
 	char buf[512];
 	int val = 1;
 
-	/*share memory and semaphore 생성==========*/
+	/* ======share memory and semaphore 생성======= */
 	int shmid= shmget(SHM_KEY, sizeof(struct share_memory),IPC_CREAT | 0666);
 	if (shmid < 0) {
 		perror("shmget");
@@ -112,11 +116,10 @@ int main(void)
 		exit(1);
 	}
 	semid= semget(SEM_KEY,1,IPC_CREAT | 0666);
-
 	union semun su;
 	su.val = 1;
 	semctl(semid,0,SETVAL,su);
-	//==========================================
+	/* ========================================== */
 	sockfd = socket(AF_INET, SOCK_STREAM, 0); // socket(~,~,protocol); protocol == 0 mean Auto Set protocol
 	if(sockfd == -1)
 	{
@@ -218,6 +221,7 @@ int main(void)
 			
 			memset(buf, 0, sizeof(buf));
 			close(new_fd);
+			//exit(0);
 		}
 		else if(pid > 0) // parent process
 		{
@@ -226,6 +230,7 @@ int main(void)
 			
 		}
 	}
+	exit(0);
 
 	close(new_fd);
 	close(sockfd);
@@ -379,7 +384,7 @@ void* shared_memory_write_thread(void* arg){
    	char input_buf_th[512];
    	char server_display[512];
    	if(first==0){
-		irst=1;
+		first=1;
 	  	ENTER_USER_BROADCAST(server_display,user_ID[user_num]);
 	  	P(semid);
 	  	strncpy(sh_data->msg[sh_data->write_idx], server_display, MSG_SIZE - 1);
@@ -427,12 +432,22 @@ void* shared_memory_read_thread(void* arg){
 	int user_num=k->user_id;
 	int sockid=k->sockid;
 	int r, w;
+	char *command_loc;
+	int command_idx;
+	
+	char target_id[32];
+	char receive_id[10];
+	int target_user_num=-1;
+	int receive_user_num=-1;
+	char input_buf_th[512];
+	char transmit_ip_port[50];
 
-
+	int file_op_flag=FILE_P2P_OFF;
    	while(1){
+		receive_id[0] = '\0';
+		target_id[0] = '\0';
 		if(EXIT_FLAG[user_num]==1){
 			EXIT_FLAG[user_num]=0;
-			free(arg);
 			break;
 		}
 		P(semid);
@@ -440,11 +455,61 @@ void* shared_memory_read_thread(void* arg){
 		w = sh_data->write_idx;
 		V(semid);
 		if(w != r){
+			strncpy(input_buf_th, sh_data->msg[r], sizeof(input_buf_th)-1);
+			input_buf_th[sizeof(input_buf_th)-1] = '\0';
+			command_loc=strchr(input_buf_th,'$');
+			if(command_loc != NULL){
+				
+				command_idx=command_loc-input_buf_th;
+
+				if(strncmp(input_buf_th+command_idx,"$FILE|",6)==0){
+				=
+					file_op_flag=FILE_P2P_ON;
+					char *tid = input_buf_th + command_idx + 6;
+					strncpy(target_id, tid, sizeof(target_id)-1);
+					target_id[sizeof(target_id)-1] = '\0';
+
+					char *right_bracket = strchr(input_buf_th, ']');
+					if (right_bracket != NULL) {
+
+						int username_len = right_bracket - (input_buf_th + 1);
+						strncpy(receive_id, input_buf_th + 1, username_len);
+						receive_id[username_len] = '\0';   // NULL terminate
+					}
+					
+
+				}
+			}
 			
-			Send_Message(sockid,sh_data->msg[r]);
-			sh_data->read_idx[user_num] = (r + 1) % MSG_BUFFER_SIZE;
-			
-		}
-   	}
+			switch(file_op_flag){
+			case FILE_P2P_ON:
+				file_op_flag=FILE_P2P_OFF;
+				receive_user_num=Find_user(receive_id);
+				target_user_num=Find_user(target_id);
+				if(target_user_num==-1){
+					
+					// Send_Message(sockid,NOT_FIND_USER);
+					sh_data->read_idx[user_num] = (r + 1) % MSG_BUFFER_SIZE;
+					break;
+				}
+				if(target_user_num==user_num){
+					sprintf(transmit_ip_port,"$FILE|%s|%s\n",user_IP[target_user_num],user_PORT[target_user_num]);
+					Send_Message(sockid,transmit_ip_port);
+					sh_data->read_idx[user_num] = (r + 1) % MSG_BUFFER_SIZE;
+				}
+				else{
+					
+					sh_data->read_idx[user_num] = (r + 1) % MSG_BUFFER_SIZE;
+				}
+
+				break;
+			case FILE_P2P_OFF:
+			default:
+				Send_Message(sockid,input_buf_th);
+				sh_data->read_idx[user_num] = (r + 1) % MSG_BUFFER_SIZE;
+				break;	
+			}
+   		}
+	}
    	return NULL;   
 }
