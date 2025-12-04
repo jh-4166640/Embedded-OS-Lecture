@@ -7,8 +7,12 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+
+
+
+
 #define SERV_IP     "220.149.128.92"
-#define SERV_PORT   4000
+#define SERV_PORT   4480 // 고정
 #define P2P_PORT    4001
 
 int main(void)

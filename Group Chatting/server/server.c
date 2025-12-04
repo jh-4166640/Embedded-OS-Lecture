@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 
 #define SERV_IP		"220.149.128.92"
-#define SERV_PORT	4000
+#define SERV_PORT	4480 // 고정
 #define BACKLOG		10
 /* Client_Log_in return code */
 #define MALFUNCTION 		2
@@ -201,3 +201,4 @@ int Find_user(char *target)
 	}
 	return idx;
 }
+
