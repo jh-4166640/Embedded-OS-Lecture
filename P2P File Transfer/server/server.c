@@ -284,6 +284,7 @@ int Client_Log_in(int client_fd, char *buf,int *user_num)
 				{
 					char temp[64];
 					char send_temp[64];
+					char recv_ip_port[80];
 					LOG_IN_SUCCESS(temp,id);
 					printf("%s\n\n",temp);
 
@@ -293,6 +294,11 @@ int Client_Log_in(int client_fd, char *buf,int *user_num)
 					//printf("%s\n\n",msg);
 					Recv_Message(client_fd, user_IP[user_idx]); // receive P2P IP
 					Recv_Message(client_fd, user_PORT[user_idx]); // receive P2P PORT
+					sprintf(recv_ip_port,"IP %s| port %s",user_IP[user_idx],user_PORT[user_idx]);
+					//printf("P2P IP and PORT received: %s\n\n",recv_ip_port);
+					for(int i = 0; i<2;i++)
+						printf("user_IP[%d]: %s, user_PORT[%d]: %s\n",i,user_IP[i],i,user_PORT[i]);
+
 					return LOG_IN_SUCCESS_VAL;
 				}
 				else // Log in fail
@@ -490,7 +496,7 @@ void* shared_memory_read_thread(void* arg){
 				file_op_flag=FILE_P2P_OFF;
 				receive_user_num=Find_user(receive_id);
 				target_user_num=Find_user(target_id);
-				printf("rec %d tar %d\n",receive_user_num,target_user_num);
+				printf("rec_user %d tar_user %d\n",receive_user_num,target_user_num);
 				if(target_user_num==-1)
 				{
 					// Send_Message(sockid,NOT_FIND_USER);
@@ -499,7 +505,7 @@ void* shared_memory_read_thread(void* arg){
 				}
 				if(target_user_num==user_num){
 					sprintf(transmit_ip_port,"$FILE|%s|%s|%s\n",target_id,user_IP[receive_user_num],user_PORT[receive_user_num]);
-					printf("FILE_P2P_ON%s\n",transmit_ip_port);
+					printf("FILE_P2P_ON %s\n",transmit_ip_port);
 					Send_Message(sockid,transmit_ip_port);
 					sh_data->read_idx[user_num] = (r + 1) % MSG_BUFFER_SIZE;
 				}
