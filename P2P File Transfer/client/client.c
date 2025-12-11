@@ -14,9 +14,14 @@
 
 
 #define SERV_IP     "220.149.128.92"
+<<<<<<< HEAD
 #define SERV_PORT   4467 // 고정
 #define MYP2P_IP    "220.149.128.94" // 할 때 마다 바꿔줘야 함
 #define MYP2P_PORT  4370 // 클라이언트 포트 // 할 때 마다 바꿔줘야 함
+=======
+#define SERV_PORT   4370 // 고정
+#define MYP2P_IP    "220.149.128.91" // 할 때 마다 바꿔줘야 함
+>>>>>>> 34f064fe7578d348d2c970a89b6bb4caedc8a884
 #define MYP2P_PORT  4371 // 클라이언트 포트 // 할 때 마다 바꿔줘야 함
 
 #define BACKLOG      10
