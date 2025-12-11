@@ -13,7 +13,7 @@
 #include <sys/wait.h>
 
 #define SERV_IP      "220.149.128.92"
-#define SERV_PORT   4467 // 고정
+#define SERV_PORT   4370 // 고정
 #define BACKLOG      10
 /* Client_Log_in return code */
 #define MALFUNCTION       		-2
@@ -53,8 +53,6 @@ char EXIT_FLAG[MAX_USER]={0,};
 char *user_ID[MAX_USER]= {"user1","user2","user3"};
 char *user_PW[MAX_USER]= {"passwd1","passwd2","passwd3"};
 
-char user_IP[MAX_USER][64];
-char user_PORT[MAX_USER][16];
 
 #define DATA_NOT_RECEIVED -1
 
@@ -67,12 +65,18 @@ int Find_user(char * target);
 
 void* shared_memory_write_thread(void* arg);
 void* shared_memory_read_thread(void* arg);
+void P(int semid);
+void V(int semid);
+
+
 
 /* share memory */
 struct share_memory{
 	char msg[MSG_BUFFER_SIZE][MSG_SIZE];
 	int write_idx;
-	int read_idx[MAX_USER];
+	int read_idx[MAX_USER];		
+	char user_IP[MAX_USER][64];
+	char user_PORT[MAX_USER][16];	
 };
 struct thread_arg {
 	struct share_memory* sh;
@@ -81,7 +85,7 @@ struct thread_arg {
 };
 //semaphore id 전역변수로 설정
 int semid;
-
+struct share_memory* sh_data; 
 
 union semun{
    int val;
@@ -106,7 +110,7 @@ int main(void)
 		perror("shmget");
 		exit(1);
 	}
-	struct share_memory* sh_data=(struct share_memory*) shmat(shmid,NULL,0);
+	sh_data=(struct share_memory*) shmat(shmid,NULL,0);
 		
 	sh_data->write_idx = 0;
 	for (int i = 0; i < MAX_USER; i++)
@@ -291,8 +295,11 @@ int Client_Log_in(int client_fd, char *buf,int *user_num)
 					sprintf(msg,"%s|%d",send_temp,LOG_IN_SUCCESS_VAL);
 					send(client_fd , msg, strlen(msg)+1,0);
 					//printf("%s\n\n",msg);
-					Recv_Message(client_fd, user_IP[user_idx]); // receive P2P IP
-					Recv_Message(client_fd, user_PORT[user_idx]); // receive P2P PORT
+					P(semid);
+					Recv_Message(client_fd, sh_data->user_IP[user_idx]); // receive P2P IP
+					Recv_Message(client_fd, sh_data->user_PORT[user_idx]); // receive P2P PORT
+					V(semid);
+					// printf("User %s user1P2P IP: %s, user1PORT: %s  user2 IP:%s user2port:%s\n",id,user_IP[0],user_PORT[0],user_IP[1],user_PORT[1]);
 					return LOG_IN_SUCCESS_VAL;
 				}
 				else // Log in fail
@@ -480,6 +487,7 @@ void* shared_memory_read_thread(void* arg){
 						int username_len = right_bracket - (input_buf_th + 1);
 						strncpy(receive_id, input_buf_th + 1, username_len);
 						receive_id[username_len] = '\0';   // NULL terminate
+						printf("Target ID: %s, Receive ID: %s\n", target_id, receive_id);
 					}
 
 				}
@@ -498,7 +506,8 @@ void* shared_memory_read_thread(void* arg){
 					break;
 				}
 				if(target_user_num==user_num){
-					sprintf(transmit_ip_port,"$FILE|%s|%s|%s\n",target_id,user_IP[receive_user_num],user_PORT[receive_user_num]);
+					// printf("user0:%s user1:%s",user_IP[0],user_IP[1]);
+					sprintf(transmit_ip_port,"$FILE|%s|%s|%s\n",target_id,sh_data->user_IP[receive_user_num],sh_data->user_PORT[receive_user_num]);
 					printf("FILE_P2P_ON%s\n",transmit_ip_port);
 					Send_Message(sockid,transmit_ip_port);
 					sh_data->read_idx[user_num] = (r + 1) % MSG_BUFFER_SIZE;
