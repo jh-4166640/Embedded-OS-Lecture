@@ -11,19 +11,18 @@
 #include <pthread.h>
 #include <dirent.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 
 
 #define SERV_IP     "220.149.128.92"
-<<<<<<< HEAD
-#define SERV_PORT   4467 // 고정
-#define MYP2P_IP    "220.149.128.94" // 할 때 마다 바꿔줘야 함
-#define MYP2P_PORT  4370 // 클라이언트 포트 // 할 때 마다 바꿔줘야 함
-=======
-#define SERV_PORT   4370 // 고정
+#define SERV_PORT   4378 // 고정
 #define MYP2P_IP    "220.149.128.91" // 할 때 마다 바꿔줘야 함
->>>>>>> 34f064fe7578d348d2c970a89b6bb4caedc8a884
 #define MYP2P_PORT  4371 // 클라이언트 포트 // 할 때 마다 바꿔줘야 함
 
+/*
+#define MYP2P_IP    "220.149.128.94" // 할 때 마다 바꿔줘야 함
+#define MYP2P_PORT  4372 // 클라이언트 포트 // 할 때 마다 바꿔줘야 함
+*/
 #define BACKLOG      10
 #define ACCEPT_ERROR -1
 #define SOCKET_ERROR -2
@@ -44,6 +43,8 @@
 #define P2P_SHARE_DIR_PATH "/home/st2021146036/P2P_shared_files"
 #endif
 
+#define FileENDmsg  "$$FILE$END"
+
 
 typedef struct{
     int sockfd;
@@ -60,7 +61,8 @@ void* Recv_Message_Process(void *arg);
 int P2P_Server_Init(int *sockfd, struct sockaddr_in *my_addr);
 void P2P_Server();
 void P2P_Client(short port, const char *ip);
-void List_Shared_Files(const char *path, char *file_list, size_t list_size);
+//void List_Shared_Files(const char *path, char *file_list, size_t list_size);
+void List_Shared_Files(const char *path, char *file_list, size_t list_size, char *file_name[]);
 
 
 
@@ -218,7 +220,6 @@ void* Recv_Message_Process(void *arg)
                 if(token != NULL && ip != NULL && port != NULL)
                 {
                     short p2p_port = (short)atoi(port);
-
                     P2P_Client(p2p_port, ip); // File 전송하는 쪽이 Client
                     memset(buf, 0, sizeof(buf));
                 }
@@ -248,8 +249,10 @@ void Group_Chatting(int sockfd, char *name)
     pthread_detach(recv_tid);
     while(1) // Transmit loop
     {
-        fgets(tx_buf,sizeof(tx_buf),stdin); // Wait for user input
+        //fgets(tx_buf,sizeof(tx_buf),stdin); // Wait for user input
+        if(fgets(tx_buf,sizeof(tx_buf),stdin) == NULL) break;
         tx_buf[strcspn(tx_buf,"\n")] = '\0';
+        
         if(strcmp(tx_buf,"exit")==0)
         {
             close(sockfd);
@@ -260,29 +263,32 @@ void Group_Chatting(int sockfd, char *name)
         {
             printf("%s\n",tx_buf);
             Send_Message(sockfd, tx_buf); // Notify server about P2P file transfer request
-            P2P_Server(); // File 받는 쪽이 Server
-
-            // int pid = fork();
-            // if(pid<0)
-            // {
-            //     perror("fork() error lol!");
-            //     continue;
-            // }
-            // else if(pid == 0) // child process
-            // {
-                
-            //     P2P_Server(); // File 받는 쪽이 Server    
-            // }
-            // else if(pid > 0) // parent process
-            // {
-            //     waitpid(pid, NULL, WNOHANG);  // Prevent zombie processes
-            // }
+            //P2P_Server(); // File 받는 쪽이 Server
+            int pid = fork();
+            if(pid<0)
+            {
+                perror("fork() error lol!");
+                continue;
+            }
+            else if(pid == 0) // child process
+            {
+                P2P_Server(); // File 받는 쪽이 Server    
+                exit(0);
+            }
+            else if(pid > 0) // parent process
+            {
+                // WNOHANG 옵션 없이 wait를 사용하여 자식이 exit(0) 할 때까지 여기서 블로킹됩니다.
+                int status;
+                waitpid(pid, &status, 0); 
+                printf("return chatting room\n");
+                //waitpid(pid, NULL, WNOHANG);  // Prevent zombie processes
+            }
         }
         else Send_Message(sockfd, tx_buf);
     }
 }
 
-void List_Shared_Files(const char *path, char *file_list, size_t list_size)
+void List_Shared_Files(const char *path, char *file_list, size_t list_size, char *file_name[])
 {
     DIR *dp;
     struct dirent *entry;
@@ -294,7 +300,8 @@ void List_Shared_Files(const char *path, char *file_list, size_t list_size)
     }
     printf("Shared files in %s:\n", path);
     file_list[0] = '\0'; // Initialize file_list
-
+    int count=1;
+    char num_str[5];
     while ((entry = readdir(dp)) != NULL)
     {
         if (strcmp(entry->d_name, ".") == 0 ||
@@ -302,6 +309,9 @@ void List_Shared_Files(const char *path, char *file_list, size_t list_size)
             continue;
         if(strlen(file_list) + strlen(entry->d_name) + 2 >= list_size)
             break;
+        file_name[count-1] = strdup(entry->d_name);
+        sprintf(num_str, "%d. ", count++);
+        strcat(file_list, num_str);
         strcat(file_list, entry->d_name);
         strcat(file_list, "|");
         printf("%s\n", entry->d_name);
@@ -359,6 +369,9 @@ void P2P_Server() // File을 받는 쪽
 	/* buffer */
 	int rcv_byte;
 	char buf[512];
+    char list[512];
+    char sel_File_num[128];
+    char filename[128];
     /* P2P Server 소켓 초기화 */
 	int sock_res = P2P_Server_Init(&P2Pserver_fd, &my_addr);
     if(sock_res == SOCKET_ERROR)
@@ -386,12 +399,46 @@ void P2P_Server() // File을 받는 쪽
         Send_Message(P2Pclient_fd, "P2P Conneected");
     }
     Recv_Message(P2Pclient_fd, buf);
+    strcpy(list,buf);
     for(int i=0; i<strlen(buf); i++)
     {
         if(buf[i] == '|')
             buf[i] = '\n';
     }
     printf("============file list============\n%s\n", buf);
+    printf("\nselect file number: ");
+    fgets(sel_File_num,sizeof(sel_File_num),stdin);
+    Send_Message(P2Pclient_fd, sel_File_num);
+    
+    /* File 수신 */
+    
+    Recv_Message(P2Pclient_fd, filename);
+    char size_buf[32]; // file size
+    Recv_Message(P2Pclient_fd, size_buf);
+    long file_size = atol(size_buf);
+    printf("downloading... '%s', size.. %ld byte\n",filename,file_size);
+
+    FILE *fp;
+    fp = fopen(filename, "wb");
+    if(fp == NULL){
+        perror("fopen error");
+        close(P2Pclient_fd);
+        return;
+    }
+    char file_buf[1024];
+    int nbytes;
+    long total_recv_data = 0;
+    while (total_recv_data < file_size)
+    {
+        nbytes=recv(P2Pclient_fd,file_buf,sizeof(file_buf),0);
+        if(nbytes<=0) break;
+        fwrite(file_buf,1,nbytes,fp);
+        total_recv_data += nbytes;
+        fflush(stdout);
+    }
+    printf("-- Download complete! --\n");
+    fclose(fp);
+
     close(P2Pclient_fd);
 }
 
@@ -401,10 +448,11 @@ void P2P_Client(short port, const char *ip) // File을 전송하는 쪽
     struct sockaddr_in server_addr;
     char buf[512];
     char file_list[512];
+    char sel_File_num[128];
+    char *file_name[128];
 
     printf("P2P Client connecting to %d:%s\n", port, ip);
-    
-    sleep(10);
+    sleep(2);
     int sock_res = Socket_Init(&P2Pserver_fd, &server_addr, port, ip);
     if(sock_res == ACCEPT_ERROR)
     {
@@ -413,9 +461,48 @@ void P2P_Client(short port, const char *ip) // File을 전송하는 쪽
     }
     Recv_Message(P2Pserver_fd, buf);
     printf("%s\n",buf);
-    List_Shared_Files(P2P_SHARE_DIR_PATH, file_list, sizeof(file_list));
+    List_Shared_Files(P2P_SHARE_DIR_PATH, file_list, sizeof(file_list),file_name);
     Send_Message(P2Pserver_fd, file_list);
+    // 파일 선택 번호 받기
+    Recv_Message(P2Pserver_fd, sel_File_num);
+    int file_num = atoi(sel_File_num)-1;
+    printf("\nselected File: %s\n", file_name[file_num]);
+    Send_Message(P2Pserver_fd,file_name[file_num]); //File 제목 보내기
 
+    /* File 보내기 시작 */
+
+    FILE *fp;
+    char file_path[256];
+    char file_buf[1024];
+    int nread;
+    snprintf(file_path, sizeof(file_path), "%s/%s", P2P_SHARE_DIR_PATH, file_name[file_num]);
+    struct stat st;
+    if(stat(file_path,&st)==-1)
+    {
+        perror("stat error");
+        close(P2Pserver_fd);
+        return;
+    }
+    long file_size = st.st_size;
+    char size_buf[32];
+    snprintf(size_buf, sizeof(size_buf), "%ld", file_size);
+    Send_Message(P2Pserver_fd, size_buf);
+
+    fp = fopen(file_path, "rb");
+    if(fp == NULL){
+        perror("fopen error");
+        close(P2Pserver_fd);
+        return;
+    }
+    printf("Uploading... '%s'\n", file_name[atoi(sel_File_num)]);
+    while ((nread = fread(file_buf, 1, sizeof(file_buf), fp)) > 0) 
+    {
+        if (send(P2Pserver_fd, file_buf, nread, 0) == -1) {
+            perror("send error");
+            break;
+        }
+    }
+    fclose(fp);
     printf("P2P Client is closing ... \n");
     close(P2Pserver_fd);
     return;

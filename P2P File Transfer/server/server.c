@@ -13,7 +13,7 @@
 #include <sys/wait.h>
 
 #define SERV_IP      "220.149.128.92"
-#define SERV_PORT   4370 // 고정
+#define SERV_PORT   4378 // 고정
 #define BACKLOG      10
 /* Client_Log_in return code */
 #define MALFUNCTION       		-2
@@ -45,7 +45,7 @@
 #define FILE_P2P_OFF 0
 
 /*share memory and semaphore key value*/
-#define SHM_KEY 7878
+#define SHM_KEY 7879
 #define SEM_KEY 5678
 
 char EXIT_FLAG[MAX_USER]={0,};
@@ -67,6 +67,7 @@ void* shared_memory_write_thread(void* arg);
 void* shared_memory_read_thread(void* arg);
 void P(int semid);
 void V(int semid);
+void* server_command_thread(void* arg);
 
 
 
@@ -85,6 +86,7 @@ struct thread_arg {
 };
 //semaphore id 전역변수로 설정
 int semid;
+int shmid;
 struct share_memory* sh_data; 
 
 union semun{
@@ -92,6 +94,21 @@ union semun{
    struct semid_ds *buf;
    unsigned short *array;
 };
+
+void* server_command_thread(void* arg) {
+    char cmd[20];
+    while(1) {
+        scanf("%s", cmd);
+        if(strcmp(cmd, "exit") == 0 || strcmp(cmd, "shutdown") == 0) {
+            printf("server exit\n");
+            // 자원 정리 로직 (공유 메모리 등)
+            shmctl(shmid, IPC_RMID, NULL);
+            semctl(semid, 0, IPC_RMID);
+            exit(0);
+        }
+    }
+}
+
 int main(void)
 {
 	int sockfd, new_fd;
@@ -105,7 +122,8 @@ int main(void)
 	int val = 1;
 
 	/* ======share memory and semaphore 생성======= */
-	int shmid= shmget(SHM_KEY, sizeof(struct share_memory),IPC_CREAT | 0666);
+	
+	shmid= shmget(SHM_KEY, sizeof(struct share_memory),IPC_CREAT | 0666);
 	if (shmid < 0) {
 		perror("shmget");
 		exit(1);
@@ -158,6 +176,10 @@ int main(void)
 		exit(1);
 	}
 	else printf("listen() is OK...\n\n");
+
+	pthread_t admin_tid;
+	pthread_create(&admin_tid, NULL, server_command_thread, NULL);
+	pthread_detach(admin_tid);
 
 	while(1)
 	{
@@ -232,9 +254,7 @@ int main(void)
 		}
 		else if(pid > 0) // parent process
 		{
-			
-			close(new_fd);   
-			
+			close(new_fd);   	
 		}
 	}
 	exit(0);
@@ -296,21 +316,11 @@ int Client_Log_in(int client_fd, char *buf,int *user_num)
 					sprintf(msg,"%s|%d",send_temp,LOG_IN_SUCCESS_VAL);
 					send(client_fd , msg, strlen(msg)+1,0);
 					//printf("%s\n\n",msg);
-<<<<<<< HEAD
-					Recv_Message(client_fd, user_IP[user_idx]); // receive P2P IP
-					Recv_Message(client_fd, user_PORT[user_idx]); // receive P2P PORT
-					sprintf(recv_ip_port,"IP %s| port %s",user_IP[user_idx],user_PORT[user_idx]);
-					//printf("P2P IP and PORT received: %s\n\n",recv_ip_port);
-					for(int i = 0; i<2;i++)
-						printf("user_IP[%d]: %s, user_PORT[%d]: %s\n",i,user_IP[i],i,user_PORT[i]);
-
-=======
 					P(semid);
 					Recv_Message(client_fd, sh_data->user_IP[user_idx]); // receive P2P IP
 					Recv_Message(client_fd, sh_data->user_PORT[user_idx]); // receive P2P PORT
 					V(semid);
 					// printf("User %s user1P2P IP: %s, user1PORT: %s  user2 IP:%s user2port:%s\n",id,user_IP[0],user_PORT[0],user_IP[1],user_PORT[1]);
->>>>>>> 34f064fe7578d348d2c970a89b6bb4caedc8a884
 					return LOG_IN_SUCCESS_VAL;
 				}
 				else // Log in fail
@@ -517,14 +527,8 @@ void* shared_memory_read_thread(void* arg){
 					break;
 				}
 				if(target_user_num==user_num){
-<<<<<<< HEAD
-					sprintf(transmit_ip_port,"$FILE|%s|%s|%s\n",target_id,user_IP[receive_user_num],user_PORT[receive_user_num]);
-					printf("FILE_P2P_ON %s\n",transmit_ip_port);
-=======
-					// printf("user0:%s user1:%s",user_IP[0],user_IP[1]);
 					sprintf(transmit_ip_port,"$FILE|%s|%s|%s\n",target_id,sh_data->user_IP[receive_user_num],sh_data->user_PORT[receive_user_num]);
-					printf("FILE_P2P_ON%s\n",transmit_ip_port);
->>>>>>> 34f064fe7578d348d2c970a89b6bb4caedc8a884
+					printf("FILE_P2P_ON %s\n",transmit_ip_port);
 					Send_Message(sockid,transmit_ip_port);
 					sh_data->read_idx[user_num] = (r + 1) % MSG_BUFFER_SIZE;
 				}
