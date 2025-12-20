@@ -379,7 +379,7 @@ void* shared_memory_write_thread(void* arg){
    	char input_buf_th[512];
    	char server_display[512];
    	if(first==0){
-		irst=1;
+		first=1;
 	  	ENTER_USER_BROADCAST(server_display,user_ID[user_num]);
 	  	P(semid);
 	  	strncpy(sh_data->msg[sh_data->write_idx], server_display, MSG_SIZE - 1);
